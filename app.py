@@ -92,16 +92,22 @@ min_streams = st.sidebar.number_input(
     "Min Spotify Streams (Millions)", min_value=0, value=0, step=50
 ) * 1_000_000
 
-# Apply global filters
-filtered = df[
+# 1. Base Filter (Year & Streams only) - Use this for the Battle/Compare tabs
+filtered_base = df[
     (df["Release Year"] >= selected_years[0]) &
     (df["Release Year"] <= selected_years[1]) &
     (df["Spotify Streams"].fillna(0) >= min_streams)
 ].copy()
-if selected_artists:
-    filtered = filtered[filtered["Artist"].isin(selected_artists)]
 
-st.sidebar.markdown(f"---\n**{len(filtered):,}** songs in current filter")
+# 2. Sidebar Filter (Specific Artists) - Use this for general ranking tabs
+if selected_artists:
+    filtered = filtered_base[filtered_base["Artist"].isin(selected_artists)]
+else:
+    filtered = filtered_base
+
+# 3. Update the Artist List for Selectboxes
+# Use filtered_base here so "Artist vs Artist" can always see everyone
+artist_list = sorted(filtered_base["Artist"].dropna().unique().tolist())
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
 st.title("🎵 Most Streamed Spotify Songs 2024")
@@ -112,31 +118,25 @@ st.markdown(
 st.divider()
 
 # ── KPI CARDS ─────────────────────────────────────────────────────────────────
-k1, k2, k3, k4 = st.columns(4)
-total_streams = filtered["Spotify Streams"].sum()
-top_row = filtered.nlargest(1, "Spotify Streams")
-top_song_name = top_row["Track"].values[0] if len(top_row) else "N/A"
-top_song_artist = top_row["Artist"].values[0] if len(top_row) else ""
+if not filtered.empty:
+    total_streams = filtered["Spotify Streams"].sum()
+    top_row = filtered.nlargest(1, "Spotify Streams")
+    top_song_name = top_row["Track"].values[0]
+    top_song_artist = top_row["Artist"].values[0]
 
-with k1:
-    st.markdown(f"""<div class="metric-card">
-        <div class="metric-value">{len(filtered):,}</div>
-        <div class="metric-label">Songs</div></div>""", unsafe_allow_html=True)
-with k2:
-    st.markdown(f"""<div class="metric-card">
-        <div class="metric-value">{filtered['Artist'].nunique():,}</div>
-        <div class="metric-label">Unique Artists</div></div>""", unsafe_allow_html=True)
-with k3:
-    st.markdown(f"""<div class="metric-card">
-        <div class="metric-value">{total_streams/1e12:.2f}T</div>
-        <div class="metric-label">Total Streams</div></div>""", unsafe_allow_html=True)
-with k4:
-    st.markdown(f"""<div class="metric-card">
-        <div class="metric-value" style="font-size:1.1rem">{top_song_name}</div>
-        <div class="metric-label">Top Song · {top_song_artist}</div></div>""",
-        unsafe_allow_html=True)
-
-st.divider()
+    with k1:
+        st.markdown(f'<div class="metric-card"><div class="metric-value">{len(filtered):,}</div><div class="metric-label">Songs</div></div>', unsafe_allow_html=True)
+    with k2:
+        st.markdown(f'<div class="metric-card"><div class="metric-value">{filtered["Artist"].nunique():,}</div><div class="metric-label">Artists</div></div>', unsafe_allow_html=True)
+    with k3:
+        # Billions/Trillions logic
+        val = total_streams/1e12 if total_streams > 1e12 else total_streams/1e9
+        unit = "T" if total_streams > 1e12 else "B"
+        st.markdown(f'<div class="metric-card"><div class="metric-value">{val:.2f}{unit}</div><div class="metric-label">Total Streams</div></div>', unsafe_allow_html=True)
+    with k4:
+        st.markdown(f'<div class="metric-card"><div class="metric-value" style="font-size:1.1rem">{top_song_name[:20]}...</div><div class="metric-label">Top Song · {top_song_artist}</div></div>', unsafe_allow_html=True)
+else:
+    st.error("No data matches these filters. Please adjust the sidebar.")
 
 # ── PLOT STYLE HELPER ─────────────────────────────────────────────────────────
 def dark_fig(figsize=(10, 5)):
@@ -195,7 +195,7 @@ with tab_top:
     ax.set_xlabel("Spotify Streams (Billions)", color="#B3B3B3")
     ax.set_xlim(0, top_songs["Streams (B)"].max() * 1.15)
     plt.tight_layout()
-    st.pyplot(fig); plt.close()
+    st.pyplot(fig); plt.close(fig)
 
     st.dataframe(
         top_songs[["Track", "Artist", "Streams (B)"]],
@@ -235,7 +235,7 @@ with tab_platform:
     ax2.set_title("Market Share", color="white")
     fig.patch.set_facecolor("#121212")
     plt.tight_layout()
-    st.pyplot(fig); plt.close()
+    st.pyplot(fig); plt.close(fig)
 
     # Per-song averages
     st.markdown("#### Average per Song")
@@ -281,7 +281,7 @@ with tab_era:
     ax.set_ylabel("Total Streams / Views (Billions)", color="#B3B3B3")
     ax.legend(facecolor="#1A1A1A", labelcolor="white")
     plt.tight_layout()
-    st.pyplot(fig); plt.close()
+    st.pyplot(fig); plt.close(fig)
 
     st.info("💡 TikTok's explosive growth from 2020 onwards confirms no single platform holds dominance after 2021.")
 
@@ -317,7 +317,7 @@ with tab_collab:
         ax.set_xlabel("Spotify Streams (Billions)", color="#B3B3B3")
         ax.set_xlim(0, top_collabs["Streams (B)"].max() * 1.15)
         plt.tight_layout()
-        st.pyplot(fig); plt.close()
+        st.pyplot(fig); plt.close(fig)
 
         total_c = len(collabs)
         pct_c   = total_c / len(filtered) * 100
@@ -351,7 +351,7 @@ with tab_albums:
         ax.set_xlabel("Total Spotify Streams (Billions)", color="#B3B3B3")
         ax.set_xlim(0, album_streams.max() * 1.18)
         plt.tight_layout()
-        st.pyplot(fig); plt.close()
+        st.pyplot(fig); plt.close(fig)
 
         st.markdown(f"**{filtered['Album Name'].nunique():,}** unique albums analysed")
 
@@ -394,7 +394,7 @@ with tab_timing:
 
     fig.patch.set_facecolor("#121212")
     plt.tight_layout()
-    st.pyplot(fig); plt.close()
+    st.pyplot(fig); plt.close(fig)
 
     fri_avg = filtered[filtered["Release Day"] == "Friday"]["Spotify Streams"].mean()
     all_avg = filtered["Spotify Streams"].mean()
@@ -464,7 +464,7 @@ with tab_shazam:
         ax.set_ylabel("Shazam Counts (Thousands)", color="#B3B3B3")
         ax.legend(facecolor="#1A1A1A", labelcolor="white", markerscale=2)
         plt.tight_layout()
-        st.pyplot(fig); plt.close()
+        st.pyplot(fig); plt.close(fig)
 
         # Quadrant counts
         q_counts = sdf["Quadrant"].value_counts()
@@ -520,7 +520,7 @@ with tab_artist:
         ax.set_xlabel("Spotify Streams (Millions)", color="#B3B3B3")
         ax.set_title(f"All songs by {selected}", color="white")
         plt.tight_layout()
-        st.pyplot(fig); plt.close()
+        st.pyplot(fig); plt.close(fig)
 
         # Cross-platform for this artist
         cross_cols = {
@@ -556,73 +556,55 @@ with tab_artist:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 9 — ARTIST VS ARTIST
 # ══════════════════════════════════════════════════════════════════════════════
+# ── TAB 9 — ARTIST VS ARTIST (FIXED) ──
 with tab_vs:
     st.subheader("🥊 Artist vs Artist")
-    st.markdown("*Head-to-head comparison across all platforms*")
-
+    
     col_a, col_b = st.columns(2)
     with col_a:
         artist_a = st.selectbox("Artist A", artist_list, index=0, key="vs_a")
     with col_b:
-        default_b = artist_list[1] if len(artist_list) > 1 else artist_list[0]
-        artist_b  = st.selectbox("Artist B", artist_list,
-                                  index=artist_list.index(default_b), key="vs_b")
+        # Ensure index exists
+        idx_b = artist_list.index(artist_list[1]) if len(artist_list) > 1 else 0
+        artist_b = st.selectbox("Artist B", artist_list, index=idx_b, key="vs_b")
 
     adf_a = filtered[filtered["Artist"] == artist_a]
     adf_b = filtered[filtered["Artist"] == artist_b]
 
-    vs_cols = {
-        "Spotify Streams": "Spotify",
-        "YouTube Views":   "YouTube",
-        "TikTok Views":    "TikTok",
-    }
-    vs_avail = {v: k for k, v in vs_cols.items() if k in filtered.columns}
+    # Use a consistent list of platforms to ensure the X-axis matches
+    platforms_to_compare = ["Spotify Streams", "YouTube Views", "TikTok Views"]
+    display_labels = ["Spotify", "YouTube", "TikTok"]
+    
+    # Filter only platforms that actually exist in the dataframe
+    existing_platforms = [p for p in platforms_to_compare if p in filtered.columns]
+    existing_labels = [display_labels[platforms_to_compare.index(p)] for p in existing_platforms]
 
-    if len(adf_a) == 0 or len(adf_b) == 0:
-        st.warning("One of the artists has no songs in the current filter.")
+    if adf_a.empty or adf_b.empty:
+        st.warning("Select different artists to compare.")
     else:
-        totals_a = {label: adf_a[col].sum() / 1e9
-                    for col, label in vs_avail.items() if col in adf_a.columns}
-        totals_b = {label: adf_b[col].sum() / 1e9
-                    for col, label in vs_avail.items() if col in adf_b.columns}
+        # Calculate totals safely
+        vals_a = [adf_a[p].sum() / 1e9 if p in adf_a.columns else 0 for p in existing_platforms]
+        vals_b = [adf_b[p].sum() / 1e9 if p in adf_b.columns else 0 for p in existing_platforms]
 
-        # Grouped bar chart
-        platforms_vs = list(totals_a.keys())
-        x = np.arange(len(platforms_vs))
+        fig, ax = dark_fig(figsize=(9, 5))
+        x = np.arange(len(existing_labels))
         width = 0.35
 
-        fig, ax = dark_fig(figsize=(9, 4.5))
-        bars_a = ax.bar(x - width/2,
-                        [totals_a.get(p, 0) for p in platforms_vs],
-                        width, label=artist_a, color="#1DB954")
-        bars_b = ax.bar(x + width/2,
-                        [totals_b.get(p, 0) for p in platforms_vs],
-                        width, label=artist_b, color="#FF5500")
-        for bar in list(bars_a) + list(bars_b):
-            h = bar.get_height()
-            if h > 0:
-                ax.text(bar.get_x() + bar.get_width()/2, h + 0.05,
-                        f"{h:.1f}B", ha="center", color="white", fontsize=8)
-        ax.set_xticks(x)
-        ax.set_xticklabels(platforms_vs, color="#B3B3B3")
-        ax.set_ylabel("Total Streams / Views (Billions)", color="#B3B3B3")
-        ax.legend(facecolor="#1A1A1A", labelcolor="white")
-        plt.tight_layout()
-        st.pyplot(fig); plt.close()
+        ax.bar(x - width/2, vals_a, width, label=artist_a, color="#1DB954")
+        ax.bar(x + width/2, vals_b, width, label=artist_b, color="#FF5500")
 
-        # Stats comparison table
-        st.markdown("#### Head-to-Head Stats")
-        stats = {
-            "Songs in Dataset":  [len(adf_a), len(adf_b)],
-            "Avg Streams/Song":  [f"{adf_a['Spotify Streams'].mean()/1e6:.0f}M",
-                                   f"{adf_b['Spotify Streams'].mean()/1e6:.0f}M"],
-            "Top Track":         [adf_a.nlargest(1,'Spotify Streams')['Track'].values[0][:30],
-                                   adf_b.nlargest(1,'Spotify Streams')['Track'].values[0][:30]],
-            "Total Spotify (B)": [f"{adf_a['Spotify Streams'].sum()/1e9:.2f}",
-                                   f"{adf_b['Spotify Streams'].sum()/1e9:.2f}"],
-        }
-        compare_df = pd.DataFrame(stats, index=[artist_a, artist_b]).T
-        st.dataframe(compare_df, use_container_width=True)
+        # Add labels on top of bars
+        for i, v in enumerate(vals_a):
+            ax.text(i - width/2, v + 0.05, f"{v:.1f}B", ha='center', color='white', fontsize=8)
+        for i, v in enumerate(vals_b):
+            ax.text(i + width/2, v + 0.05, f"{v:.1f}B", ha='center', color='white', fontsize=8)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(existing_labels)
+        ax.set_ylabel("Billions")
+        ax.legend()
+        st.pyplot(fig)
+        plt.close(fig)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 10 — STREAM DISTRIBUTION
@@ -682,7 +664,7 @@ with tab_dist:
 
     fig.patch.set_facecolor("#121212")
     plt.tight_layout()
-    st.pyplot(fig); plt.close()
+    st.pyplot(fig); plt.close(fig)
 
     # Stats row
     s1, s2, s3, s4 = st.columns(4)
