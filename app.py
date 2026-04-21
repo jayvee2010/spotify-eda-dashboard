@@ -118,25 +118,42 @@ st.markdown(
 st.divider()
 
 # ── KPI CARDS ─────────────────────────────────────────────────────────────────
+# ── KPI CARDS (RE-STRUCTURED) ────────────────────────────────────────────────
+# Step 1: Define columns FIRST
+k1, k2, k3, k4 = st.columns(4)
+
+# Step 2: Calculate values
 if not filtered.empty:
     total_streams = filtered["Spotify Streams"].sum()
     top_row = filtered.nlargest(1, "Spotify Streams")
-    top_song_name = top_row["Track"].values[0]
-    top_song_artist = top_row["Artist"].values[0]
+    top_song_name = top_row["Track"].values[0] if not top_row.empty else "N/A"
+    top_song_artist = top_row["Artist"].values[0] if not top_row.empty else ""
 
+    # Step 3: Use the columns
     with k1:
-        st.markdown(f'<div class="metric-card"><div class="metric-value">{len(filtered):,}</div><div class="metric-label">Songs</div></div>', unsafe_allow_html=True)
+        st.markdown(f"""<div class="metric-card">
+            <div class="metric-value">{len(filtered):,}</div>
+            <div class="metric-label">Songs</div></div>""", unsafe_allow_html=True)
     with k2:
-        st.markdown(f'<div class="metric-card"><div class="metric-value">{filtered["Artist"].nunique():,}</div><div class="metric-label">Artists</div></div>', unsafe_allow_html=True)
+        st.markdown(f"""<div class="metric-card">
+            <div class="metric-value">{filtered['Artist'].nunique():,}</div>
+            <div class="metric-label">Unique Artists</div></div>""", unsafe_allow_html=True)
     with k3:
-        # Billions/Trillions logic
-        val = total_streams/1e12 if total_streams > 1e12 else total_streams/1e9
-        unit = "T" if total_streams > 1e12 else "B"
-        st.markdown(f'<div class="metric-card"><div class="metric-value">{val:.2f}{unit}</div><div class="metric-label">Total Streams</div></div>', unsafe_allow_html=True)
+        # Simple Trillion/Billion formatting
+        if total_streams >= 1e12:
+            display_streams = f"{total_streams/1e12:.2f}T"
+        else:
+            display_streams = f"{total_streams/1e9:.2f}B"
+        st.markdown(f"""<div class="metric-card">
+            <div class="metric-value">{display_streams}</div>
+            <div class="metric-label">Total Streams</div></div>""", unsafe_allow_html=True)
     with k4:
-        st.markdown(f'<div class="metric-card"><div class="metric-value" style="font-size:1.1rem">{top_song_name[:20]}...</div><div class="metric-label">Top Song · {top_song_artist}</div></div>', unsafe_allow_html=True)
+        st.markdown(f"""<div class="metric-card">
+            <div class="metric-value" style="font-size:1.1rem">{top_song_name[:20]}...</div>
+            <div class="metric-label">Top Song · {top_song_artist}</div></div>""",
+            unsafe_allow_html=True)
 else:
-    st.error("No data matches these filters. Please adjust the sidebar.")
+    st.warning("⚠️ No data available for the selected filters.")
 
 # ── PLOT STYLE HELPER ─────────────────────────────────────────────────────────
 def dark_fig(figsize=(10, 5)):
