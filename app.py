@@ -234,13 +234,28 @@ with tab3:
 # ── TAB 4: LANGUAGE ──────────────────────────────────────────────────────────
 with tab4:
     st.subheader("Language Distribution")
+
     if "Language Code" not in filtered.columns:
-        st.info("Language column not found. Add a 'Language Code' column to your CSV for this chart.")
+        st.info("💡 Your CSV doesn't have a 'Language Code' column yet. "
+                "To enable this chart, run this in your Colab notebook and "
+                "re-upload the CSV with the new column included:")
+        st.code("""
+from langdetect import detect, LangDetectException
+
+def detect_language(text):
+    try:
+        return detect(str(text))
+    except LangDetectException:
+        return 'unknown'
+
+df['Language Code'] = df['Track'].apply(detect_language)
+df.to_csv('spotify_2024.csv', index=False)
+        """, language="python")
     else:
         lang_counts = filtered["Language Code"].value_counts().head(10)
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        fig.patch.set_facecolor("#121212")
         for ax in [ax1, ax2]:
-            fig.patch.set_facecolor("#121212")
             ax.set_facecolor("#1A1A1A")
         ax1.pie(lang_counts.values, labels=lang_counts.index,
                 autopct="%1.1f%%", textprops={"color": "white"},
@@ -250,7 +265,8 @@ with tab4:
             filtered.groupby("Language Code")["Spotify Streams"]
             .sum().sort_values(ascending=False).head(10).div(1e9)
         )
-        ax2.barh(lang_streams.index[::-1], lang_streams.values[::-1], color="#1DB954")
+        ax2.barh(lang_streams.index[::-1], lang_streams.values[::-1],
+                 color="#1DB954")
         ax2.set_xlabel("Total Streams (B)", color="#B3B3B3")
         ax2.set_title("Streams by Language", color="white")
         ax2.tick_params(colors="#B3B3B3")
@@ -269,35 +285,58 @@ with tab5:
     req = ["Spotify Streams", "Spotify Playlist Count",
            "YouTube Views", "YouTube Likes",
            "TikTok Views", "TikTok Likes"]
+
     if all(c in filtered.columns for c in req):
         ldf = filtered.copy()
         for col in req:
             ldf[col] = pd.to_numeric(ldf[col], errors="coerce")
-        ldf = ldf.dropna(subset=req)
-        ldf["sp_ratio"] = ldf["Spotify Playlist Count"] / (ldf["Spotify Streams"] + 1)
-        ldf["yt_ratio"] = ldf["YouTube Likes"]          / (ldf["YouTube Views"]   + 1)
-        ldf["tt_ratio"] = ldf["TikTok Likes"]           / (ldf["TikTok Views"]    + 1)
-        scaler = MinMaxScaler()
-        ldf[["sp_n","yt_n","tt_n"]] = scaler.fit_transform(ldf[["sp_ratio","yt_ratio","tt_ratio"]])
-        ldf["loyalty"] = 0.5*ldf["sp_n"] + 0.3*ldf["yt_n"] + 0.2*ldf["tt_n"]
 
-        min_songs = st.slider("Min charting songs per artist", 1, 10, 3)
-        artist_loyalty = (
-            ldf.groupby("Artist")
-            .filter(lambda x: len(x) >= min_songs)
-            .groupby("Artist")["loyalty"].mean()
-            .sort_values(ascending=False).head(15)
+        # Drop rows where any required column is null or zero
+        ldf = ldf.dropna(subset=req)
+        ldf = ldf[(ldf["Spotify Streams"] > 0) &
+                  (ldf["YouTube Views"] > 0) &
+                  (ldf["TikTok Views"] > 0)]
+
+        ldf["sp_ratio"] = ldf["Spotify Playlist Count"] / ldf["Spotify Streams"]
+        ldf["yt_ratio"] = ldf["YouTube Likes"]          / ldf["YouTube Views"]
+        ldf["tt_ratio"] = ldf["TikTok Likes"]           / ldf["TikTok Views"]
+
+        # Replace any inf values that sneak through
+        ldf = ldf.replace([np.inf, -np.inf], np.nan).dropna(
+            subset=["sp_ratio","yt_ratio","tt_ratio"]
         )
 
-        fig, ax = plt.subplots(figsize=(10, 5))
-        fig.patch.set_facecolor("#121212")
-        ax.set_facecolor("#1A1A1A")
-        ax.barh(artist_loyalty.index[::-1], artist_loyalty.values[::-1], color="#1DB954")
-        ax.set_xlabel("Loyalty Index (0=low, 1=high)", color="#B3B3B3")
-        ax.tick_params(colors="#B3B3B3")
-        ax.spines[:].set_color("#333333")
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
+        if len(ldf) == 0:
+            st.warning("Not enough data after filtering to compute loyalty index.")
+        else:
+            scaler = MinMaxScaler()
+            ldf[["sp_n","yt_n","tt_n"]] = scaler.fit_transform(
+                ldf[["sp_ratio","yt_ratio","tt_ratio"]]
+            )
+            ldf["loyalty"] = 0.5*ldf["sp_n"] + 0.3*ldf["yt_n"] + 0.2*ldf["tt_n"]
+
+            min_songs = st.slider("Min charting songs per artist", 1, 10, 3)
+            artist_loyalty = (
+                ldf.groupby("Artist")
+                .filter(lambda x: len(x) >= min_songs)
+                .groupby("Artist")["loyalty"].mean()
+                .sort_values(ascending=False).head(15)
+            )
+
+            if len(artist_loyalty) == 0:
+                st.warning("No artists with that many songs in current filter. Try lowering the slider.")
+            else:
+                fig, ax = plt.subplots(figsize=(10, 5))
+                fig.patch.set_facecolor("#121212")
+                ax.set_facecolor("#1A1A1A")
+                ax.barh(artist_loyalty.index[::-1],
+                        artist_loyalty.values[::-1], color="#1DB954")
+                ax.set_xlabel("Loyalty Index (0=low, 1=high)", color="#B3B3B3")
+                ax.tick_params(colors="#B3B3B3")
+                ax.spines[:].set_color("#333333")
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
     else:
-        st.info("Some required columns are missing from the filtered dataset.")
+        missing = [c for c in req if c not in filtered.columns]
+        st.info(f"Missing columns: {missing}")
